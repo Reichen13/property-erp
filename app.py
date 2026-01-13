@@ -64,13 +64,36 @@ def daily_auto_backup():
 
 
 def _set_session_cookie_js(token, max_age=28800):
-    js = f"""<script>document.cookie='session={token};path=/;max-age={max_age};SameSite=Lax';</script>"""
+    js = f"""<script>
+    document.cookie='erp_session={token};path=/;max-age={max_age};SameSite=Lax';
+    localStorage.setItem('erp_session', '{token}');
+    </script>"""
     components.html(js, height=0)
 
 
 def _clear_session_cookie_js():
-    js = """<script>document.cookie='session=;path=/;max-age=0;SameSite=Lax';</script>"""
+    js = """<script>
+    document.cookie='erp_session=;path=/;max-age=0;SameSite=Lax';
+    localStorage.removeItem('erp_session');
+    </script>"""
     components.html(js, height=0)
+
+
+def _read_session_from_storage():
+    """通过 JavaScript 读取 localStorage 中的 session"""
+    js_code = """
+    <script>
+    (function() {
+        var token = localStorage.getItem('erp_session');
+        if (token && !window.location.search.includes('session=')) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('session', token);
+            window.location.replace(url.toString());
+        }
+    })();
+    </script>
+    """
+    components.html(js_code, height=0)
 
 
 def check_login():
@@ -81,6 +104,7 @@ def check_login():
     # 尝试从URL参数恢复会话
     params = st.query_params
     token = params.get('session')
+    
     if token:
         s = SessionLocal()
         user = AuthService.validate_token(s, token)
@@ -93,6 +117,9 @@ def check_login():
             s.close()
             return True
         s.close()
+    
+    # 尝试从 localStorage 恢复会话
+    _read_session_from_storage()
     
     # 显示登录界面
     c1, c2, c3 = st.columns([1, 2, 1])
