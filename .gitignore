@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+venv/
+.venv/
+
+# Backups
+backups/
+
+# Property databases
+property_dbs/

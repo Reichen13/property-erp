@@ -1,0 +1,19 @@
+name: ERP CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install streamlit sqlalchemy bcrypt pandas pytest pytest-cov ruff bandit
+      - name: Lint with ruff
+        run: ruff check erp_modular/ --ignore F401
+      - name: Security scan with bandit
+        run: bandit -r erp_modular/ -ll -q
+      - name: Run tests
+        run: cd erp_modular && pytest tests/ -v --cov=services --cov-fail-under=40
