@@ -60,7 +60,7 @@ class BillingService:
                     if exists:
                         skipped += 1
                     else:
-                        s.add(Bill(room_id=r.id, fee_type=fee_type, period=period, amount_due=amt, operator=operator))
+                        s.add(Bill(room_id=r.id, fee_type=fee_type, period=period, accounting_period=period[:7] if len(period) >= 7 else period, amount_due=amt, operator=operator))
                         count += 1
                         total_amt += amt
             elif gen_all:
@@ -75,7 +75,7 @@ class BillingService:
                         if exists:
                             skipped += 1
                         else:
-                            s.add(Bill(room_id=r.id, fee_type=fname.strip(), period=period.strip(), amount_due=famt, operator=operator))
+                            s.add(Bill(room_id=r.id, fee_type=fname.strip(), period=period.strip(), accounting_period=period[:7] if len(period) >= 7 else period, amount_due=famt, operator=operator))
                             count += 1
                             total_amt += famt
             else:
@@ -86,7 +86,7 @@ class BillingService:
                     if exists:
                         skipped += 1
                     else:
-                        s.add(Bill(room_id=r.id, fee_type=fee_type, period=period, amount_due=amt, operator=operator))
+                        s.add(Bill(room_id=r.id, fee_type=fee_type, period=period, accounting_period=period[:7] if len(period) >= 7 else period, amount_due=amt, operator=operator))
                         count += 1
                         total_amt += amt
         

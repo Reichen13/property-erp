@@ -8,6 +8,9 @@ from config import config
 
 def page_query(user, role):
     st.title("🔍 数据中心")
+    if role not in ['管理员', '集团财务', '项目财务']:
+        st.error("⛔️ 权限不足")
+        return
     s = SessionLocal()
     try:
         t1, t2, t3 = st.tabs(["🧾 账单明细", "💹 资金流水", "📤 数据导出"])
@@ -15,7 +18,7 @@ def page_query(user, role):
         with t1:
             page = st.number_input("页码", min_value=1, value=1)
             offset = (page - 1) * config.PAGE_SIZE
-            res = s.query(Bill).join(Room).filter(not Room.is_deleted).offset(offset).limit(config.PAGE_SIZE).all()
+            res = s.query(Bill).join(Room).filter(Room.is_deleted.is_(False)).offset(offset).limit(config.PAGE_SIZE).all()
             st.dataframe(pd.DataFrame([{
                 "房号": b.room.room_number, "科目": b.fee_type, "账期": b.period,
                 "应收": float(b.amount_due), "减免": float(b.discount),
@@ -23,7 +26,7 @@ def page_query(user, role):
             } for b in res]), use_container_width=True)
         
         with t2:
-            res = s.query(PaymentRecord).join(Room).filter(not Room.is_deleted).order_by(desc(PaymentRecord.created_at)).limit(500).all()
+            res = s.query(PaymentRecord).join(Room).filter(Room.is_deleted.is_(False)).order_by(desc(PaymentRecord.created_at)).limit(500).all()
             st.dataframe(pd.DataFrame([{
                 "时间": r.created_at.strftime("%Y-%m-%d %H:%M"), "房号": r.room.room_number,
                 "类型": r.biz_type, "金额": float(r.amount), "方式": r.pay_method, "操作人": r.operator

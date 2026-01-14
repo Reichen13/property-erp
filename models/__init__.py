@@ -4,7 +4,7 @@ from .entities import (
     Property, User, Room, FeeType, RoomFeeStandard, Account,
     LedgerEntry, PeriodClose, Bill, PaymentRecord, AuditLog,
     LoginFail, Invoice, DiscountRequest, AdjustmentEntry,
-    ParkingSpace, UtilityMeter, UtilityReading, ServiceContract,
+    ParkingType, ParkingSpace, UtilityMeter, UtilityReading, ServiceContract,
     DataChangeHistory, SessionToken
 )
 
@@ -13,6 +13,6 @@ __all__ = [
     'Property', 'User', 'Room', 'FeeType', 'RoomFeeStandard', 'Account',
     'LedgerEntry', 'PeriodClose', 'Bill', 'PaymentRecord', 'AuditLog',
     'LoginFail', 'Invoice', 'DiscountRequest', 'AdjustmentEntry',
-    'ParkingSpace', 'UtilityMeter', 'UtilityReading', 'ServiceContract',
+    'ParkingType', 'ParkingSpace', 'UtilityMeter', 'UtilityReading', 'ServiceContract',
     'DataChangeHistory', 'SessionToken'
 ]

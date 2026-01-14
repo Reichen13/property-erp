@@ -10,7 +10,7 @@ from utils.transaction import transaction_scope
 
 def page_billing(user, role):
     st.title("📝 财务管理中心")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '项目财务', '审批员']:
         st.error("⛔️ 权限不足")
         return
     

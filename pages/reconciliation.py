@@ -9,7 +9,7 @@ from utils.helpers import format_money
 def page_reconciliation_workbench(user, role):
     """收费核对工作台"""
     st.title("🔍 收费核对工作台")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     
@@ -70,7 +70,7 @@ def page_reconciliation_workbench(user, role):
 def page_three_way_reconciliation(user, role):
     """三方核对机制"""
     st.title("🔄 三方核对机制")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     
@@ -80,7 +80,8 @@ def page_three_way_reconciliation(user, role):
         
         st.markdown("#### 1️⃣ 房产余额 vs 预收账款科目余额")
         total_room_balance = s.query(func.sum(Room.balance)).filter(Room.is_deleted.is_(False)).scalar() or 0.0
-        ledger_balance = s.query(func.sum(LedgerEntry.amount)).filter(LedgerEntry.account_id == 1).scalar() or 0.0
+        # 预收账款科目ID=3，计算净余额：贷方(direction=-1)为正，借方(direction=1)为负
+        ledger_balance = s.query(func.sum(LedgerEntry.amount * LedgerEntry.direction * -1)).filter(LedgerEntry.account_id == 3).scalar() or 0.0
         diff1 = abs(total_room_balance - ledger_balance)
         
         col1, col2, col3 = st.columns(3)
@@ -109,7 +110,7 @@ def page_three_way_reconciliation(user, role):
 def page_financial_check(user, role):
     """财务勾稽关系检查"""
     st.title("⚖️ 财务勾稽关系检查")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     

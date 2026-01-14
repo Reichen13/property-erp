@@ -20,14 +20,14 @@ def get_logger(name: str) -> logging.Logger:
 @dataclass
 class Config:
     # 应用配置
-    APP_NAME: str = os.getenv('ERP_APP_NAME', '世纪名城 ERP')
+    APP_NAME: str = os.getenv('ERP_APP_NAME', '无锡蓝盾物业费用管理系统')
     DEFAULT_ADMIN_USER: str = os.getenv('ERP_ADMIN_USER', 'admin')
     DEFAULT_ADMIN_PASS: str = os.getenv('ERP_ADMIN_PASS', 'admin123')
     
     # 数据库配置
     MASTER_DB_PATH: str = os.getenv('ERP_MASTER_DB', 'master.db')
     PROPERTY_DB_DIR: str = os.getenv('ERP_DB_DIR', 'property_dbs')
-    DB_PATH: str = os.getenv('ERP_DB_PATH', 'property_erp_1.7.1.db')
+    DB_PATH: str = os.getenv('ERP_DB_PATH', '../property_erp_1.7.1.db')
     
     # 安全配置
     LOGIN_MAX_FAIL: int = int(os.getenv('ERP_LOGIN_MAX_FAIL', '5'))

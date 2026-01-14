@@ -110,6 +110,7 @@ class Bill(Base):
     room_id = Column(Integer, ForeignKey('rooms.id'))
     fee_type = Column(String(50))
     period = Column(String(50))
+    accounting_period = Column(String(7), nullable=True)  # 会计归属期 YYYY-MM
     amount_due = Column(Float, default=0.0)
     amount_paid = Column(Float, default=0.0)
     discount = Column(Float, default=0.0)
@@ -199,6 +200,14 @@ class AdjustmentEntry(Base):
     reason = Column(String(200))
     approved_by = Column(String(50))
     approved_at = Column(DateTime, default=datetime.datetime.now)
+
+
+class ParkingType(Base):
+    __tablename__ = 'parking_types'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.now)
 
 
 class ParkingSpace(Base):

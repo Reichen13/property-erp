@@ -3,11 +3,22 @@ import streamlit as st
 import pandas as pd
 import datetime
 import time
+import io
 from models.base import SessionLocal
-from models.entities import ParkingSpace, UtilityMeter, UtilityReading
+from models.entities import ParkingSpace, UtilityMeter, UtilityReading, ParkingType, Bill
 from sqlalchemy.sql import desc
 from utils.transaction import transaction_scope
 from services.audit import AuditService
+
+# 默认车位类型
+DEFAULT_PARKING_TYPES = ["地下车位", "地面车位", "车库", "子母车位"]
+
+def get_parking_types(s):
+    """获取所有车位类型"""
+    types = s.query(ParkingType).filter(ParkingType.is_deleted.is_(False)).all()
+    if types:
+        return [t.name for t in types]
+    return DEFAULT_PARKING_TYPES
 
 def page_parking_management(user, role):
     """车位管理页面"""
@@ -15,7 +26,9 @@ def page_parking_management(user, role):
     
     s = SessionLocal()
     try:
-        t1, t2 = st.tabs(["车位列表", "新增车位"])
+        t1, t2, t3, t4 = st.tabs(["车位列表", "新增车位", "车位类型管理", "批量导入"])
+        
+        parking_types = get_parking_types(s)
         
         with t1:
             st.markdown("### 📋 车位列表")
@@ -31,7 +44,7 @@ def page_parking_management(user, role):
             st.markdown("### ➕ 新增车位")
             with st.form("add_parking"):
                 space_number = st.text_input("车位号", placeholder="如：A1-01")
-                space_type = st.selectbox("车位类型", ["地下车位", "地面车位", "车库"])
+                space_type = st.selectbox("车位类型", parking_types)
                 owner_name = st.text_input("业主姓名")
                 owner_phone = st.text_input("业主电话")
                 status = st.selectbox("使用状态", ["闲置", "已售", "业主自用"])
@@ -52,6 +65,117 @@ def page_parking_management(user, role):
                             st.rerun()
                         except Exception as e:
                             st.error(f"添加失败: {e}")
+        
+        with t3:
+            if role not in ['管理员', '项目财务']:
+                st.warning("⚠️ 仅管理员和项目财务可管理车位类型")
+            else:
+                st.markdown("### 🏷️ 车位类型管理")
+                st.info(f"当前车位类型: {', '.join(parking_types)}")
+                
+                with st.form("add_parking_type"):
+                    new_type = st.text_input("新增车位类型", placeholder="如：子母车位、机械车位")
+                    if st.form_submit_button("添加类型", type="primary"):
+                        if not new_type:
+                            st.error("请输入类型名称")
+                        elif new_type in parking_types:
+                            st.error("该类型已存在")
+                        else:
+                            try:
+                                with transaction_scope() as (s_trx, audit_buffer):
+                                    s_trx.add(ParkingType(name=new_type))
+                                    AuditService.log_deferred(s_trx, audit_buffer, user, "新增车位类型", new_type, {})
+                                st.success(f"✅ 车位类型 '{new_type}' 添加成功！")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"添加失败: {e}")
+        
+        with t4:
+            if role not in ['管理员', '项目财务']:
+                st.warning("⚠️ 仅管理员和项目财务可批量导入")
+            else:
+                st.markdown("### 📥 批量导入车位")
+                
+                # 动态生成模板CSV
+                template_csv = """车位号,车位类型,业主姓名,业主电话,使用状态,月车位费,历史欠费,欠费周期起,欠费周期终,预缴金额
+A1-01,地下车位,张三,13800138001,已售,150,300,2025-10,2025-11,0
+A1-02,地面车位,李四,13800138002,业主自用,100,0,,,200
+B2-01,车库,王五,13800138003,已售,200,0,,,0
+C3-01,子母车位,赵六,13800138004,已售,250,500,2025-09,2025-10,100"""
+                st.download_button("📄 下载导入模板", template_csv.encode('utf-8-sig'), file_name="车位批量导入模板.csv", mime="text/csv")
+                
+                st.markdown("""
+                **模板字段说明：**
+                - 车位号（必填）、车位类型、业主姓名、业主电话、使用状态
+                - 月车位费、历史欠费、欠费周期起、欠费周期终、预缴金额
+                """)
+                
+                uploaded = st.file_uploader("上传CSV文件", type=['csv'], key="parking_import")
+                if uploaded:
+                    try:
+                        df = pd.read_csv(uploaded)
+                        st.dataframe(df.head(10), use_container_width=True)
+                        st.info(f"共 {len(df)} 条记录")
+                        
+                        if st.button("🚀 确认导入", type="primary"):
+                            success, fail = 0, 0
+                            with transaction_scope() as (s_trx, audit_buffer):
+                                for _, row in df.iterrows():
+                                    try:
+                                        space_num = str(row.get('车位号', '')).strip()
+                                        if not space_num:
+                                            fail += 1
+                                            continue
+                                        
+                                        # 检查是否已存在
+                                        existing = s_trx.query(ParkingSpace).filter(ParkingSpace.space_number == space_num).first()
+                                        if existing:
+                                            fail += 1
+                                            continue
+                                        
+                                        fee_monthly = float(row.get('月车位费', 0) or 0)
+                                        prepaid = float(row.get('预缴金额', 0) or 0)
+                                        arrears = float(row.get('历史欠费', 0) or 0)
+                                        
+                                        parking = ParkingSpace(
+                                            space_number=space_num,
+                                            space_type=str(row.get('车位类型', '地下车位') or '地下车位'),
+                                            owner_name=str(row.get('业主姓名', '') or ''),
+                                            owner_phone=str(row.get('业主电话', '') or ''),
+                                            status=str(row.get('使用状态', '闲置') or '闲置'),
+                                            fee_monthly=fee_monthly,
+                                            balance=prepaid
+                                        )
+                                        s_trx.add(parking)
+                                        s_trx.flush()
+                                        
+                                        # 如果有历史欠费，创建账单
+                                        if arrears > 0:
+                                            period_start = str(row.get('欠费周期起', '') or '')
+                                            period_end = str(row.get('欠费周期终', '') or '')
+                                            period = f"{period_start}~{period_end}" if period_start else ""
+                                            bill = Bill(
+                                                room_id=parking.id,
+                                                fee_type="车位费",
+                                                period=period,
+                                                amount_due=arrears,
+                                                amount_paid=0,
+                                                status="未缴"
+                                            )
+                                            s_trx.add(bill)
+                                        
+                                        success += 1
+                                    except Exception:
+                                        fail += 1
+                                
+                                AuditService.log_deferred(s_trx, audit_buffer, user, "批量导入车位", f"成功{success}条", {"失败": fail})
+                            
+                            st.success(f"✅ 导入完成！成功 {success} 条，失败 {fail} 条")
+                            time.sleep(1)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"文件解析失败: {e}")
     finally:
         s.close()
 

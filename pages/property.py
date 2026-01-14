@@ -57,7 +57,7 @@ def page_property_management(user, role):
             
             st.markdown("### ➕ 新增物业")
             with st.form("add_property"):
-                name = st.text_input("物业名称", placeholder="如：世纪名城")
+                name = st.text_input("物业名称", placeholder="如：无锡蓝盾")
                 code = st.text_input("物业编码", placeholder="如：sjmc（用于数据库文件名）")
                 address = st.text_input("地址")
                 

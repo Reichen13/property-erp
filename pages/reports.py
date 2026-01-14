@@ -10,7 +10,7 @@ from utils.helpers import format_money
 def page_payment_reconciliation(user, role):
     """收款对账单"""
     st.title("💳 收款对账单")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     
@@ -76,7 +76,7 @@ def page_arrears_tracking(user, role):
 def page_financial_reports(user, role):
     """财务报表中心"""
     st.title("📊 财务报表中心")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     
@@ -87,12 +87,18 @@ def page_financial_reports(user, role):
         with tab1:
             st.markdown("### 📋 利润表（简化版）")
             col1, col2 = st.columns(2)
-            start_period = col1.text_input("开始账期", value=(datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m"))
-            end_period = col2.text_input("结束账期", value=datetime.datetime.now().strftime("%Y-%m"))
+            start_period = col1.text_input("开始会计期", value=(datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%Y-%m"))
+            end_period = col2.text_input("结束会计期", value=datetime.datetime.now().strftime("%Y-%m"))
             
-            revenue_due = s.query(func.sum(Bill.amount_due)).filter(Bill.period >= start_period, Bill.period <= end_period).scalar() or 0.0
-            discount = s.query(func.sum(Bill.discount)).filter(Bill.period >= start_period, Bill.period <= end_period).scalar() or 0.0
-            revenue_received = s.query(func.sum(Bill.amount_paid)).filter(Bill.period >= start_period, Bill.period <= end_period).scalar() or 0.0
+            # 使用accounting_period进行财务统计，兼容旧数据（accounting_period为空时使用period）
+            from sqlalchemy import or_, and_
+            period_filter = or_(
+                and_(Bill.accounting_period.isnot(None), Bill.accounting_period >= start_period, Bill.accounting_period <= end_period),
+                and_(Bill.accounting_period.is_(None), Bill.period >= start_period, Bill.period <= end_period)
+            )
+            revenue_due = s.query(func.sum(Bill.amount_due)).filter(period_filter).scalar() or 0.0
+            discount = s.query(func.sum(Bill.discount)).filter(period_filter).scalar() or 0.0
+            revenue_received = s.query(func.sum(Bill.amount_paid)).filter(period_filter).scalar() or 0.0
             
             st.dataframe(pd.DataFrame([
                 {"项目": "应收收入", "金额": revenue_due},
@@ -102,17 +108,20 @@ def page_financial_reports(user, role):
             ]), use_container_width=True)
         
         with tab2:
-            st.markdown("### 📋 账期对比分析")
-            periods = s.query(Bill.period).distinct().order_by(Bill.period).all()
-            period_list = [p[0] for p in periods if p[0]]
+            st.markdown("### 📋 会计期对比分析")
+            # 优先使用accounting_period，兼容旧数据
+            from sqlalchemy import coalesce
+            periods = s.query(func.coalesce(Bill.accounting_period, Bill.period)).distinct().order_by(func.coalesce(Bill.accounting_period, Bill.period)).all()
+            period_list = [p[0] for p in periods if p[0] and len(p[0]) == 7]  # 只取YYYY-MM格式
             if len(period_list) >= 2:
                 col1, col2 = st.columns(2)
-                period1 = col1.selectbox("账期1", period_list, index=max(0, len(period_list)-2))
-                period2 = col2.selectbox("账期2", period_list, index=len(period_list)-1)
+                period1 = col1.selectbox("会计期1", period_list, index=max(0, len(period_list)-2))
+                period2 = col2.selectbox("会计期2", period_list, index=len(period_list)-1)
                 
                 def get_data(p):
-                    due = s.query(func.sum(Bill.amount_due)).filter(Bill.period == p).scalar() or 0.0
-                    paid = s.query(func.sum(Bill.amount_paid)).filter(Bill.period == p).scalar() or 0.0
+                    pf = or_(Bill.accounting_period == p, and_(Bill.accounting_period.is_(None), Bill.period == p))
+                    due = s.query(func.sum(Bill.amount_due)).filter(pf).scalar() or 0.0
+                    paid = s.query(func.sum(Bill.amount_paid)).filter(pf).scalar() or 0.0
                     return {"应收": due, "实收": paid, "收缴率": (paid/due*100) if due > 0 else 0}
                 
                 d1, d2 = get_data(period1), get_data(period2)

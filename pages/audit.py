@@ -10,7 +10,7 @@ from sqlalchemy.sql import desc
 def page_audit_query(user, role):
     """审计日志查询工作台"""
     st.title("🔎 审计日志查询工作台")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务']:
         st.error("⛔️ 权限不足")
         return
     
@@ -70,7 +70,7 @@ def page_audit_query(user, role):
 def page_data_change_history(user, role):
     """数据变更历史查询"""
     st.title("📜 数据变更历史")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '集团财务']:
         st.error("⛔️ 权限不足")
         return
     

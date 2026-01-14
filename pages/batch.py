@@ -15,7 +15,7 @@ from services.ledger import LedgerService
 def page_batch_operations(user, role):
     """批量操作中心"""
     st.title("⚙️ 批量操作中心")
-    if role not in ['管理员', '财务']:
+    if role not in ['管理员', '项目财务']:
         st.error("⛔️ 权限不足")
         return
     

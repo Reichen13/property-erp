@@ -14,7 +14,7 @@ def generate_receipt_html(data):
     items_html = "".join([f"<tr><td>{i['name']}</td><td style='text-align:right'>{i['amount']}</td></tr>" for i in data['items']])
     return f"""
     <div style="border:1px solid #aaa; padding:15px; width:300px; font-family:monospace; background:#fff; color:#000;">
-      <h3 style="text-align:center; margin:0;">世纪名城物业中心</h3>
+      <h3 style="text-align:center; margin:0;">无锡蓝盾物业中心</h3>
       <p style="text-align:center; font-size:12px; border-bottom:1px dashed #000; padding-bottom:10px;">收款收据</p>
       <p>房号: {data['room']}<br>业主: {data['owner']}<br>时间: {data['time']}</p>
       <table style="width:100%; font-size:14px; border-bottom:1px dashed #000;">{items_html}</table>
@@ -26,9 +26,12 @@ def generate_receipt_html(data):
 
 def page_cashier(user, role):
     st.title("💸 收银台")
+    if role not in ['管理员', '项目财务']:
+        st.error("⛔️ 权限不足")
+        return
     s = SessionLocal()
     try:
-        rooms = s.query(Room).filter(not Room.is_deleted).all()
+        rooms = s.query(Room).filter(Room.is_deleted == False).all()
         if not rooms:
             st.warning("暂无档案数据")
             return
@@ -114,11 +117,22 @@ def page_cashier(user, role):
                                                                room_id=curr.id, ref_bill_id=bill.id)
                             
                             if pay_way == "余额抵扣":
+                                # 余额抵扣：只扣减房产余额，不创建收款记录（因为不是新收款）
                                 room = s_trx.query(Room).get(curr.id)
                                 room.balance -= float(to_pay)
+                            else:
+                                # 直接支付：创建收款记录并增加余额后立即扣减
+                                room = s_trx.query(Room).get(curr.id)
+                                room.balance += float(to_pay)  # 先充值
+                                room.balance -= float(to_pay)  # 再扣减（净效果为0）
+                                pr = PaymentRecord(room_id=curr.id, amount=float(to_pay),
+                                                   biz_type='缴费', pay_method=pay_way, operator=user)
+                                s_trx.add(pr)
+                                # 直接支付的分录：借方=现金(1)，贷方=预收账款(3)，然后预收转收入
+                                period = datetime.datetime.now().strftime("%Y-%m")
+                                LedgerService.post_double_entry(s_trx, period, 1, 3, float(to_pay),
+                                                               room_id=curr.id, ref_payment_id=pr.id)
                             
-                            s_trx.add(PaymentRecord(room_id=curr.id, amount=float(to_pay),
-                                                   biz_type='缴费', pay_method=pay_way, operator=user))
                             AuditService.log_deferred(s_trx, audit_buffer, user, "收费", curr.room_number,
                                                      {"总额": str(to_pay), "方式": pay_way})
                         st.success("支付成功")

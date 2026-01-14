@@ -9,6 +9,9 @@ from utils.transaction import transaction_scope
 
 def page_resources(user, role):
     st.title("🏗️ 资源档案管理")
+    if role not in ['管理员', '项目财务']:
+        st.error("⛔️ 权限不足")
+        return
     s = SessionLocal()
     try:
         t1, t2, t3, t4 = st.tabs(["🔍 查询/维护", "➕ 入伙/新增", "📥 批量导入", "↩️ 批次回滚"])
@@ -74,7 +77,15 @@ def page_resources(user, role):
                         st.success("添加成功")
         
         with t3:
-            st.info("模板列：房号 | 业主 | 业主电话 | 面积 | 费用项目 | 项目月标准金额 | 历史欠费 | 欠费周期起 | 欠费周期终 | 预缴金额")
+            st.info("模板列：房号 | 业主 | 业主电话 | 面积 | 费用项目 | 项目月标准金额 | 历史欠费 | 欠费周期起 | 欠费周期终 | 预缴金额 | 已缴金额(可选) | 减免金额(可选) | 会计归属期(可选,YYYY-MM)")
+            
+            # 下载模板按钮
+            import os
+            template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates", "资源档案批量导入示例.csv")
+            if os.path.exists(template_path):
+                with open(template_path, "rb") as tf:
+                    st.download_button("📥 下载导入模板", tf.read(), "资源档案批量导入模板.csv", mime="text/csv")
+            
             dry_run = st.checkbox("先试运行(Dry-run)", value=True)
             f = st.file_uploader("上传文件 (Excel/CSV)", type=['xlsx','csv'])
             
@@ -87,15 +98,17 @@ def page_resources(user, role):
                         st.warning("试运行不入库，供预览检验")
                         st.dataframe(df.head(20), use_container_width=True)
                     else:
+                        from models import PaymentRecord
                         with transaction_scope() as (s_trx, audit_buffer):
                             apply_count = 0
+                            bill_count = 0
                             for _, row in df.iterrows():
                                 rn = str(row.get('房号','')).strip()
                                 if not rn:
                                     continue
                                 r = s_trx.query(Room).filter_by(room_number=rn).first()
                                 if not r:
-                                    r = Room(room_number=rn)
+                                    r = Room(room_number=rn, property_id=1)
                                     s_trx.add(r)
                                     s_trx.flush()
                                 r.owner_name = str(row.get('业主', r.owner_name or ''))
@@ -104,9 +117,64 @@ def page_resources(user, role):
                                     r.area = float(row.get('面积', r.area or 0))
                                 except Exception:
                                     pass
+                                # 预缴金额设置到余额
+                                try:
+                                    prepay = float(row.get('预缴金额', 0) or 0)
+                                    if prepay > 0:
+                                        r.balance = (r.balance or 0) + prepay
+                                except Exception:
+                                    pass
+                                # 费用项目设置
+                                fee_name = str(row.get('费用项目', '')).strip()
+                                try:
+                                    fee_std = float(row.get('项目月标准金额', 0) or 0)
+                                except Exception:
+                                    fee_std = 0
+                                if fee_name:
+                                    if not r.fee1_name:
+                                        r.fee1_name, r.fee1_std = fee_name, fee_std
+                                    elif not r.fee2_name and r.fee1_name != fee_name:
+                                        r.fee2_name, r.fee2_std = fee_name, fee_std
+                                    elif not r.fee3_name and r.fee1_name != fee_name and r.fee2_name != fee_name:
+                                        r.fee3_name, r.fee3_std = fee_name, fee_std
+                                # 历史欠费生成账单
+                                try:
+                                    arrears = float(row.get('历史欠费', 0) or 0)
+                                except Exception:
+                                    arrears = 0
+                                try:
+                                    paid = float(row.get('已缴金额', 0) or 0)
+                                except Exception:
+                                    paid = 0
+                                try:
+                                    discount = float(row.get('减免金额', 0) or 0)
+                                except Exception:
+                                    discount = 0
+                                period_start = str(row.get('欠费周期起', '')).strip()
+                                period_end = str(row.get('欠费周期终', '')).strip()
+                                if arrears > 0 and fee_name and period_start:
+                                    period_str = f"{period_start}~{period_end}" if period_end else period_start
+                                    status = '已缴' if paid >= arrears - discount else '未缴'
+                                    # 会计归属期：优先使用导入值，否则取欠费周期起的月份
+                                    acc_period = str(row.get('会计归属期', '')).strip()
+                                    if not acc_period and period_start:
+                                        acc_period = period_start[:7] if len(period_start) >= 7 else period_start
+                                    bill = Bill(room_id=r.id, fee_type=fee_name, period=period_str,
+                                               accounting_period=acc_period if acc_period else None,
+                                               amount_due=arrears, amount_paid=paid, discount=discount,
+                                               status=status, batch_id=batch_id, operator=user, remark='期初导入')
+                                    s_trx.add(bill)
+                                    s_trx.flush()
+                                    bill_count += 1
+                                    # 已缴金额创建PaymentRecord
+                                    if paid > 0:
+                                        pr = PaymentRecord(room_id=r.id, amount=paid, biz_type='缴费',
+                                                          pay_method='期初导入', operator=user, remark=f'期初导入-{fee_name}')
+                                        s_trx.add(pr)
                                 apply_count += 1
-                            AuditService.log_deferred(s_trx, audit_buffer, user, "批量导入", "房档案", {"batch": batch_id, "rows": apply_count})
-                        st.success(f"导入完成，批次ID: {batch_id}")
+                            AuditService.log_deferred(s_trx, audit_buffer, user, "批量导入", "房档案", 
+                                                     {"batch": batch_id, "rows": apply_count, "bills": bill_count})
+                        st.success(f"导入完成，批次ID: {batch_id}，房产{apply_count}条，账单{bill_count}条")
                 except Exception as e:
                     st.error(str(e))
         

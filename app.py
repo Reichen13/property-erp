@@ -79,21 +79,13 @@ def _clear_session_cookie_js():
     components.html(js, height=0)
 
 
-def _read_session_from_storage():
-    """通过 JavaScript 读取 localStorage 中的 session"""
-    js_code = """
-    <script>
-    (function() {
-        var token = localStorage.getItem('erp_session');
-        if (token && !window.location.search.includes('session=')) {
-            var url = new URL(window.location.href);
-            url.searchParams.set('session', token);
-            window.location.replace(url.toString());
-        }
-    })();
-    </script>
-    """
-    components.html(js_code, height=0)
+def _get_cookie_token():
+    """从 cookie 中获取 session token"""
+    try:
+        from streamlit_cookies_manager import EncryptedCookieManager
+    except ImportError:
+        return None
+    return None
 
 
 def check_login():
@@ -107,19 +99,17 @@ def check_login():
     
     if token:
         s = SessionLocal()
-        user = AuthService.validate_token(s, token)
-        if user:
-            st.session_state.logged_in = True
-            st.session_state.username = user.username
-            st.session_state.user_role = user.role
-            st.session_state.user_id = user.id
-            st.session_state.property_id = user.property_id
+        try:
+            user = AuthService.validate_token(s, token)
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.username = user.username
+                st.session_state.user_role = user.role
+                st.session_state.user_id = user.id
+                st.session_state.property_id = user.property_id
+                return True
+        finally:
             s.close()
-            return True
-        s.close()
-    
-    # 尝试从 localStorage 恢复会话
-    _read_session_from_storage()
     
     # 显示登录界面
     c1, c2, c3 = st.columns([1, 2, 1])
@@ -148,6 +138,8 @@ def check_login():
                     daily_auto_backup()
                     _set_session_cookie_js(token)
                     st.success(f"登录成功！欢迎, {user.role}")
+                    # 将 token 放入 URL 参数，刷新时可恢复
+                    st.query_params['session'] = token
                     st.rerun()
                 else:
                     AuthService.record_fail(username)
