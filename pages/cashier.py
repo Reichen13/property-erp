@@ -14,7 +14,7 @@ def generate_receipt_html(data):
     items_html = "".join([f"<tr><td>{i['name']}</td><td style='text-align:right'>{i['amount']}</td></tr>" for i in data['items']])
     return f"""
     <div style="border:1px solid #aaa; padding:15px; width:300px; font-family:monospace; background:#fff; color:#000;">
-      <h3 style="text-align:center; margin:0;">无锡蓝盾物业中心</h3>
+      <h3 style="text-align:center; margin:0;">物业服务中心</h3>
       <p style="text-align:center; font-size:12px; border-bottom:1px dashed #000; padding-bottom:10px;">收款收据</p>
       <p>房号: {data['room']}<br>业主: {data['owner']}<br>时间: {data['time']}</p>
       <table style="width:100%; font-size:14px; border-bottom:1px dashed #000;">{items_html}</table>

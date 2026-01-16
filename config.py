@@ -20,7 +20,7 @@ def get_logger(name: str) -> logging.Logger:
 @dataclass
 class Config:
     # 应用配置
-    APP_NAME: str = os.getenv('ERP_APP_NAME', '无锡蓝盾物业费用管理系统')
+    APP_NAME: str = os.getenv('ERP_APP_NAME', '物业费用管理系统')
     DEFAULT_ADMIN_USER: str = os.getenv('ERP_ADMIN_USER', 'admin')
     DEFAULT_ADMIN_PASS: str = os.getenv('ERP_ADMIN_PASS', 'admin123')
     
