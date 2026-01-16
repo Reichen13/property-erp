@@ -49,8 +49,9 @@ def page_arrears_tracking(user, role):
     s = SessionLocal()
     try:
         st.markdown("### 📈 欠费总览")
-        total_arrears = s.query(func.sum(Bill.amount_due - Bill.amount_paid - Bill.discount)).filter(
-            Bill.status != '已缴', Bill.status != '作废').scalar() or 0.0
+        total_arrears = s.query(func.sum(
+            func.coalesce(Bill.amount_due, 0) - func.coalesce(Bill.amount_paid, 0) - func.coalesce(Bill.discount, 0)
+        )).filter(Bill.status != '已缴', Bill.status != '作废').scalar() or 0.0
         arrears_room_count = s.query(Room.id).join(Bill, Room.id == Bill.room_id).filter(
             Bill.status != '已缴', Bill.status != '作废').distinct().count()
         total_room_count = s.query(Room).filter(Room.is_deleted.is_(False)).count()
@@ -62,13 +63,13 @@ def page_arrears_tracking(user, role):
         
         st.markdown("### 🏆 欠费房产排行 (Top 20)")
         arrears_ranking = s.query(Room.room_number, Room.owner_name, Room.owner_phone,
-            func.sum(Bill.amount_due - Bill.amount_paid - Bill.discount).label('total_arrears')
+            func.sum(func.coalesce(Bill.amount_due, 0) - func.coalesce(Bill.amount_paid, 0) - func.coalesce(Bill.discount, 0)).label('total_arrears')
         ).join(Bill, Room.id == Bill.room_id).filter(Bill.status != '已缴', Bill.status != '作废'
         ).group_by(Room.room_number, Room.owner_name, Room.owner_phone).order_by(desc('total_arrears')).limit(20).all()
         
         if arrears_ranking:
             st.dataframe(pd.DataFrame([{"排名": i+1, "房号": r.room_number, "业主": r.owner_name,
-                "联系电话": r.owner_phone or "未填写", "欠费金额": float(r.total_arrears)}
+                "联系电话": r.owner_phone or "未填写", "欠费金额": float(r.total_arrears or 0)}
                 for i, r in enumerate(arrears_ranking)]), use_container_width=True)
     finally:
         s.close()
@@ -110,7 +111,6 @@ def page_financial_reports(user, role):
         with tab2:
             st.markdown("### 📋 会计期对比分析")
             # 优先使用accounting_period，兼容旧数据
-            from sqlalchemy import coalesce
             periods = s.query(func.coalesce(Bill.accounting_period, Bill.period)).distinct().order_by(func.coalesce(Bill.accounting_period, Bill.period)).all()
             period_list = [p[0] for p in periods if p[0] and len(p[0]) == 7]  # 只取YYYY-MM格式
             if len(period_list) >= 2:

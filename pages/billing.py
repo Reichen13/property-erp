@@ -20,6 +20,8 @@ def page_billing(user, role):
         
         with t1:
             fees = [f.name for f in s.query(FeeType).all()] or ["物业费"]
+            
+            st.markdown("### 📋 批量生成账单")
             with st.form("batch_billing"):
                 c1, c2 = st.columns(2)
                 gen_mode = c1.radio("生成依据", ["按档案预设金额", "按单价x面积"])
@@ -38,6 +40,48 @@ def page_billing(user, role):
                         st.success(f"生成 {result['count']} 笔，合计 {format_money(result['total'])}")
                     except Exception as e:
                         st.error(str(e))
+            
+            st.markdown("---")
+            st.markdown("### ✍️ 手动开账单")
+            from models import Room
+            rooms = s.query(Room).filter(Room.is_deleted == False).all()
+            if not rooms:
+                st.warning("暂无房产档案")
+            else:
+                with st.form("manual_billing"):
+                    room_map = {r.room_number: r for r in rooms}
+                    selected_room = st.selectbox("选择房号", list(room_map.keys()))
+                    c1, c2 = st.columns(2)
+                    manual_fee = c1.selectbox("费用类型", fees, key="manual_fee")
+                    manual_period = c2.text_input("账期(YYYY-MM)", value=datetime.datetime.now().strftime("%Y-%m"), key="manual_period")
+                    manual_amount = st.number_input("应收金额", min_value=0.0, step=0.01, key="manual_amount")
+                    manual_remark = st.text_input("备注（可选）", key="manual_remark")
+                    
+                    if st.form_submit_button("✅ 创建账单", use_container_width=True):
+                        if manual_amount <= 0:
+                            st.error("应收金额必须大于0")
+                        else:
+                            try:
+                                with transaction_scope() as (s_trx, audit_buffer):
+                                    room = room_map[selected_room]
+                                    bill = Bill(
+                                        room_id=room.id,
+                                        fee_type=manual_fee,
+                                        period=manual_period,
+                                        accounting_period=manual_period,
+                                        amount_due=manual_amount,
+                                        amount_paid=0.0,
+                                        discount=0.0,
+                                        status='未缴',
+                                        operator=user,
+                                        remark=manual_remark or '手动开单'
+                                    )
+                                    s_trx.add(bill)
+                                    AuditService.log_deferred(s_trx, audit_buffer, user, "手动开单", 
+                                                            selected_room, {"fee": manual_fee, "period": manual_period, "amount": manual_amount})
+                                st.success(f"账单创建成功：{selected_room} | {manual_fee} | {manual_period} | {format_money(manual_amount)}")
+                            except Exception as e:
+                                st.error(f"创建失败: {e}")
         
         with t2:
             st.subheader("📅 月度关账")

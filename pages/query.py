@@ -21,8 +21,8 @@ def page_query(user, role):
             res = s.query(Bill).join(Room).filter(Room.is_deleted.is_(False)).offset(offset).limit(config.PAGE_SIZE).all()
             st.dataframe(pd.DataFrame([{
                 "房号": b.room.room_number, "科目": b.fee_type, "账期": b.period,
-                "应收": float(b.amount_due), "减免": float(b.discount),
-                "实收": float(b.amount_paid), "状态": b.status
+                "应收": float(b.amount_due or 0), "减免": float(b.discount or 0),
+                "实收": float(b.amount_paid or 0), "状态": b.status
             } for b in res]), use_container_width=True)
         
         with t2:
@@ -36,19 +36,19 @@ def page_query(user, role):
             st.subheader("📤 数据导出")
             c1, c2 = st.columns(2)
             if c1.button("导出账单CSV"):
-                res = s.query(Bill).limit(5000).all()
+                res = s.query(Bill).join(Room).filter(Room.is_deleted.is_(False)).limit(5000).all()
                 df = pd.DataFrame([{
-                    "房号": b.room_id, "科目": b.fee_type, "账期": b.period,
-                    "应收": b.amount_due, "减免": b.discount, "实收": b.amount_paid, "状态": b.status
+                    "房号": b.room.room_number, "科目": b.fee_type, "账期": b.period,
+                    "应收": b.amount_due or 0, "减免": b.discount or 0, "实收": b.amount_paid or 0, "状态": b.status
                 } for b in res])
                 p = "export_bills.csv"
                 df.to_csv(p, index=False, encoding='utf-8-sig')
                 with open(p, 'rb') as f:
                     st.download_button("下载账单CSV", f, p)
             if c2.button("导出流水CSV"):
-                res = s.query(PaymentRecord).limit(5000).all()
+                res = s.query(PaymentRecord).join(Room).filter(Room.is_deleted.is_(False)).limit(5000).all()
                 df = pd.DataFrame([{
-                    "房号": r.room_id, "类型": r.biz_type, "金额": r.amount,
+                    "房号": r.room.room_number, "类型": r.biz_type, "金额": r.amount,
                     "方式": r.pay_method, "时间": r.created_at.strftime('%Y-%m-%d %H:%M'), "操作人": r.operator
                 } for r in res])
                 p = "export_payments.csv"

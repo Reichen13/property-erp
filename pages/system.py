@@ -34,6 +34,52 @@ def page_backup_management(user, role):
         except Exception as e:
             st.error(f"备份失败: {e}")
     
+    st.markdown("---")
+    st.markdown("### ⏰ 自动备份配置")
+    
+    # 检查cron任务是否已配置
+    import subprocess
+    try:
+        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+        cron_exists = 'auto_backup.py' in result.stdout
+    except:
+        cron_exists = False
+    
+    if cron_exists:
+        st.success("✅ 自动备份已启用（每天凌晨2点执行）")
+        if st.button("🛑 停用自动备份"):
+            try:
+                # 移除cron任务
+                result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+                lines = [l for l in result.stdout.split('\n') if 'auto_backup.py' not in l]
+                subprocess.run(['crontab', '-'], input='\n'.join(lines), text=True)
+                st.success("✅ 自动备份已停用")
+                AuditService.log(user, "停用自动备份", "系统配置", {})
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"停用失败: {e}")
+    else:
+        st.warning("⚠️ 自动备份未启用")
+        if st.button("🚀 启用自动备份（每天凌晨2点）"):
+            try:
+                # 添加cron任务
+                script_path = os.path.join(os.getcwd(), 'erp_modular/scripts/auto_backup.py')
+                cron_line = f"0 2 * * * cd {os.getcwd()} && /usr/bin/python3 {script_path} >> /tmp/backup.log 2>&1"
+                
+                result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+                existing_cron = result.stdout if result.returncode == 0 else ""
+                new_cron = existing_cron.rstrip() + '\n' + cron_line + '\n'
+                
+                subprocess.run(['crontab', '-'], input=new_cron, text=True, check=True)
+                st.success("✅ 自动备份已启用！每天凌晨2点自动执行")
+                AuditService.log(user, "启用自动备份", "系统配置", {"schedule": "每天凌晨2点"})
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"启用失败: {e}")
+    
+    st.markdown("---")
     st.markdown("### 📋 现有备份")
     backup_dir = "backups"
     if os.path.exists(backup_dir):

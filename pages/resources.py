@@ -40,10 +40,13 @@ def page_resources(user, role):
                 st.session_state.room_fee_items.append({"name": fee_types[0] if fee_types else "", "std": "0"})
             
             with st.form("add_room"):
-                no = st.text_input("房号")
+                no = st.text_input("房号", placeholder="必填")
                 owner = st.text_input("业主")
                 owner_phone = st.text_input("业主电话")
                 area = st.number_input("面积", min_value=0.0)
+                
+                import datetime
+                move_in_date = st.date_input("入伙时间", value=datetime.datetime.now())
                 
                 for idx, item in enumerate(st.session_state.room_fee_items):
                     cols = st.columns([2, 2])
@@ -51,9 +54,12 @@ def page_resources(user, role):
                         index=(fee_types.index(item["name"]) if item["name"] in fee_types else 0), key=f"fee_name_{idx}")
                     item["std"] = cols[1].text_input("标准金额", value=item.get("std",""), key=f"fee_std_{idx}")
                 
-                if st.form_submit_button("添加", disabled=(not no)):
-                    exists = s.query(Room).filter(Room.room_number == no).first()
-                    if exists:
+                submitted = st.form_submit_button("✅ 添加", use_container_width=True)
+                
+                if submitted:
+                    if not no or not no.strip():
+                        st.error("房号不能为空")
+                    elif s.query(Room).filter(Room.room_number == no).first():
                         st.error("房号已存在")
                     else:
                         fee_vals = st.session_state.room_fee_items[:3]
@@ -98,10 +104,11 @@ def page_resources(user, role):
                         st.warning("试运行不入库，供预览检验")
                         st.dataframe(df.head(20), use_container_width=True)
                     else:
-                        from models import PaymentRecord
+                        from models import PaymentRecord, LedgerEntry
                         with transaction_scope() as (s_trx, audit_buffer):
                             apply_count = 0
                             bill_count = 0
+                            prepay_total = 0
                             for _, row in df.iterrows():
                                 rn = str(row.get('房号','')).strip()
                                 if not rn:
@@ -117,11 +124,23 @@ def page_resources(user, role):
                                     r.area = float(row.get('面积', r.area or 0))
                                 except Exception:
                                     pass
-                                # 预缴金额设置到余额
+                                # 预缴金额设置到余额，并创建会计分录
                                 try:
                                     prepay = float(row.get('预缴金额', 0) or 0)
                                     if prepay > 0:
                                         r.balance = (r.balance or 0) + prepay
+                                        prepay_total += prepay
+                                        # 创建预收账款会计分录（贷方，direction=-1）
+                                        import datetime
+                                        ledger = LedgerEntry(
+                                            room_id=r.id,
+                                            account_id=3,  # 预收账款科目
+                                            amount=prepay,
+                                            period=datetime.datetime.now().strftime('%Y-%m'),
+                                            direction=-1,  # 贷方
+                                            details=f'期初导入-{r.room_number}预缴-操作员:{user}'
+                                        )
+                                        s_trx.add(ledger)
                                 except Exception:
                                     pass
                                 # 费用项目设置
@@ -137,44 +156,91 @@ def page_resources(user, role):
                                         r.fee2_name, r.fee2_std = fee_name, fee_std
                                     elif not r.fee3_name and r.fee1_name != fee_name and r.fee2_name != fee_name:
                                         r.fee3_name, r.fee3_std = fee_name, fee_std
-                                # 历史欠费生成账单
-                                try:
-                                    arrears = float(row.get('历史欠费', 0) or 0)
-                                except Exception:
-                                    arrears = 0
-                                try:
-                                    paid = float(row.get('已缴金额', 0) or 0)
-                                except Exception:
-                                    paid = 0
-                                try:
-                                    discount = float(row.get('减免金额', 0) or 0)
-                                except Exception:
-                                    discount = 0
+                                # 历史欠费生成账单 - 添加数据验证
+                                def safe_float(val, field_name):
+                                    """安全转换为浮点数，过滤无效值"""
+                                    if pd.isna(val) or val == '' or val is None:
+                                        return 0.0
+                                    val_str = str(val).strip()
+                                    # 过滤明显无效的值
+                                    if val_str.lower() in ['nan', 'none', 'null', '[object object]', 'undefined']:
+                                        st.warning(f"房号{rn}的{field_name}包含无效值'{val_str}'，已忽略")
+                                        return 0.0
+                                    try:
+                                        return float(val_str)
+                                    except (ValueError, TypeError):
+                                        st.warning(f"房号{rn}的{field_name}无法转换为数字'{val_str}'，已忽略")
+                                        return 0.0
+                                
+                                arrears = safe_float(row.get('历史欠费', 0), '历史欠费')
+                                paid = safe_float(row.get('已缴金额', 0), '已缴金额')
+                                discount = safe_float(row.get('减免金额', 0), '减免金额')
                                 period_start = str(row.get('欠费周期起', '')).strip()
                                 period_end = str(row.get('欠费周期终', '')).strip()
                                 if arrears > 0 and fee_name and period_start:
-                                    period_str = f"{period_start}~{period_end}" if period_end else period_start
-                                    status = '已缴' if paid >= arrears - discount else '未缴'
-                                    # 会计归属期：优先使用导入值，否则取欠费周期起的月份
-                                    acc_period = str(row.get('会计归属期', '')).strip()
-                                    if not acc_period and period_start:
-                                        acc_period = period_start[:7] if len(period_start) >= 7 else period_start
-                                    bill = Bill(room_id=r.id, fee_type=fee_name, period=period_str,
-                                               accounting_period=acc_period if acc_period else None,
-                                               amount_due=arrears, amount_paid=paid, discount=discount,
-                                               status=status, batch_id=batch_id, operator=user, remark='期初导入')
-                                    s_trx.add(bill)
-                                    s_trx.flush()
-                                    bill_count += 1
-                                    # 已缴金额创建PaymentRecord
+                                    # 解析周期，拆分为单月账单
+                                    import datetime as dt
+                                    def parse_period(p):
+                                        """解析日期字符串为年月"""
+                                        p = p.strip()
+                                        if len(p) >= 10:  # 2025-08-01格式
+                                            return p[:7]
+                                        elif len(p) == 7:  # 2025-08格式
+                                            return p
+                                        return None
+                                    
+                                    start_ym = parse_period(period_start)
+                                    end_ym = parse_period(period_end) if period_end else start_ym
+                                    
+                                    # 生成月份列表
+                                    months = []
+                                    if start_ym and end_ym:
+                                        try:
+                                            sy, sm = int(start_ym[:4]), int(start_ym[5:7])
+                                            ey, em = int(end_ym[:4]), int(end_ym[5:7])
+                                            while (sy, sm) <= (ey, em):
+                                                months.append(f"{sy:04d}-{sm:02d}")
+                                                sm += 1
+                                                if sm > 12:
+                                                    sm = 1
+                                                    sy += 1
+                                        except:
+                                            months = [start_ym]
+                                    else:
+                                        months = [start_ym] if start_ym else []
+                                    
+                                    # 按月份数量平分金额
+                                    month_count = len(months) if months else 1
+                                    monthly_due = round(arrears / month_count, 2)
+                                    monthly_paid = round(paid / month_count, 2)
+                                    monthly_discount = round(discount / month_count, 2)
+                                    
+                                    for i, month in enumerate(months):
+                                        # 最后一个月处理余数
+                                        if i == month_count - 1:
+                                            m_due = arrears - monthly_due * (month_count - 1)
+                                            m_paid = paid - monthly_paid * (month_count - 1)
+                                            m_disc = discount - monthly_discount * (month_count - 1)
+                                        else:
+                                            m_due, m_paid, m_disc = monthly_due, monthly_paid, monthly_discount
+                                        
+                                        status = '已缴' if m_paid >= m_due - m_disc else '未缴'
+                                        bill = Bill(room_id=r.id, fee_type=fee_name, period=month,
+                                                   accounting_period=month,
+                                                   amount_due=m_due, amount_paid=m_paid, discount=m_disc,
+                                                   status=status, batch_id=batch_id, operator=user, remark='期初导入')
+                                        s_trx.add(bill)
+                                        bill_count += 1
+                                    
+                                    # 已缴金额创建PaymentRecord（只创建一条汇总记录）
                                     if paid > 0:
                                         pr = PaymentRecord(room_id=r.id, amount=paid, biz_type='缴费',
                                                           pay_method='期初导入', operator=user, remark=f'期初导入-{fee_name}')
                                         s_trx.add(pr)
                                 apply_count += 1
                             AuditService.log_deferred(s_trx, audit_buffer, user, "批量导入", "房档案", 
-                                                     {"batch": batch_id, "rows": apply_count, "bills": bill_count})
-                        st.success(f"导入完成，批次ID: {batch_id}，房产{apply_count}条，账单{bill_count}条")
+                                                     {"batch": batch_id, "rows": apply_count, "bills": bill_count, "prepay": prepay_total})
+                        st.success(f"导入完成，批次ID: {batch_id}，房产{apply_count}条，账单{bill_count}条，预缴金额{prepay_total:.2f}元")
                 except Exception as e:
                     st.error(str(e))
         

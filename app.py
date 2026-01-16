@@ -20,7 +20,7 @@ from pages import (
     page_backup_management, page_system_monitor, page_permission_management,
     page_system_init, page_clear_test_data, page_change_password,
     page_parking_management, page_utility_meter_management, page_utility_reading,
-    page_property_management
+    page_property_management, page_operation_collection_rate
 )
 
 # 页面配置
@@ -186,6 +186,7 @@ PAGES = {
     "💳 收款对账": page_payment_reconciliation,
     "📈 欠费追踪": page_arrears_tracking,
     "📊 财务报表": page_financial_reports,
+    "📊 运营收缴率": page_operation_collection_rate,
     "💾 数据备份": page_backup_management,
     # 系统与运维
     "📡 系统监控": page_system_monitor,
@@ -202,7 +203,7 @@ PAGE_GROUPS = {
     "核心业务": ["🏠 运营驾驶舱", "💰 收银台", "📋 财务管理", "📊 数据中心", "🏢 资源档案", "⚡ 快捷面板"],
     "车位与水电": ["🚗 车位管理", "📊 水电表管理", "💧 水电抄表"],
     "数据与审计": ["🔍 收费核对", "🔄 三方核对", "⚖️ 财务检查", "🔎 审计查询", "📜 变更历史", "⚙️ 批量操作"],
-    "报表与备份": ["💳 收款对账", "📈 欠费追踪", "📊 财务报表", "💾 数据备份"],
+    "报表与备份": ["💳 收款对账", "📈 欠费追踪", "📊 财务报表", "📊 运营收缴率", "💾 数据备份"],
     "系统与运维": ["📡 系统监控", "🔐 权限管理", "🔧 系统初始化", "🗑️ 清除测试数据", "🔑 修改密码", "⚙️ 系统管理", "🏘️ 物业管理"],
 }
 

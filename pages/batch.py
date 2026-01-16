@@ -136,12 +136,12 @@ def page_batch_operations(user, role):
                     df_export = pd.DataFrame([{"房号": r.room_number, "业主": r.owner_name, "电话": r.owner_phone,
                         "面积": r.area, "余额": r.balance} for r in rooms])
                 elif export_type == "全部账单数据":
-                    bills = s.query(Bill).all()
-                    df_export = pd.DataFrame([{"房号": b.room_id, "科目": b.fee_type, "账期": b.period,
-                        "应缴": b.amount_due, "实缴": b.amount_paid, "状态": b.status} for b in bills])
+                    bills = s.query(Bill).join(Room).filter(Room.is_deleted.is_(False)).all()
+                    df_export = pd.DataFrame([{"房号": b.room.room_number, "科目": b.fee_type, "账期": b.period,
+                        "应缴": b.amount_due or 0, "实缴": b.amount_paid or 0, "状态": b.status} for b in bills])
                 else:
-                    payments = s.query(PaymentRecord).all()
-                    df_export = pd.DataFrame([{"房号": p.room_id, "金额": p.amount, "方式": p.pay_method,
+                    payments = s.query(PaymentRecord).join(Room).filter(Room.is_deleted.is_(False)).all()
+                    df_export = pd.DataFrame([{"房号": p.room.room_number, "金额": p.amount, "方式": p.pay_method,
                         "时间": p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ""} for p in payments])
                 
                 filename = f"{export_type}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"

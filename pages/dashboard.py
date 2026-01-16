@@ -25,17 +25,21 @@ def page_dashboard(user, role):
              .filter(func.date(PaymentRecord.created_at) <= q_end)
              .scalar() or 0
         )
+        # 期间减免：使用会计归属期筛选
+        q_start_str = q_start.strftime('%Y-%m')
+        q_end_str = q_end.strftime('%Y-%m')
         period_loss = to_decimal(
             s.query(func.sum(Bill.discount))
-             .filter(func.date(Bill.created_at) >= q_start)
-             .filter(func.date(Bill.created_at) <= q_end)
+             .filter(Bill.accounting_period >= q_start_str)
+             .filter(Bill.accounting_period <= q_end_str)
              .scalar() or 0
         )
+        # 期间新增欠费：使用会计归属期筛选
         period_arrears = to_decimal(
-            s.query(func.sum(Bill.amount_due - Bill.amount_paid - Bill.discount))
+            s.query(func.sum(Bill.amount_due - func.coalesce(Bill.amount_paid, 0) - func.coalesce(Bill.discount, 0)))
              .filter(Bill.status != '作废')
-             .filter(func.date(Bill.created_at) >= q_start)
-             .filter(func.date(Bill.created_at) <= q_end)
+             .filter(Bill.accounting_period >= q_start_str)
+             .filter(Bill.accounting_period <= q_end_str)
              .scalar() or 0
         )
         total_prepay = to_decimal(s.query(func.sum(Room.balance)).scalar() or 0)
